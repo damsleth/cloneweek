@@ -45,8 +45,11 @@ main() {
   # for our purposes they're the same, except
   # it's /authorize for the auth endpoint
   # and /token for the token endpoint
+
   # callback_endpoint is the url to redirect to after the oauth flow is complete,
   # e.g. http://localhost:12345/callback
+  # this must be registered in the app registration as a valid redirect URI
+
   # token_querystring is the query string to pass to the auth endpoint,
   # plus the authcode to get the access token
 
@@ -61,17 +64,18 @@ main() {
   debug_log "callback endpoint: $callback_endpoint"
   debug_log "token querystring: $token_querystring"
 
-  debug_log "\nstarting ncat server"
   start_ncat_server
-  debug_log "\nopening browser window"
   open_browser
-  debug_log "\n"
-  debug_log "reading auth code"
   read_authcode
   kill_server
   get_access_token
-  echo $access_token
   close_browser
+  finish
+}
+
+finish() {
+  debug_log "DONE"
+  echo $access_token
   exit 0
 }
 
@@ -85,6 +89,7 @@ check_command_dependency() {
 }
 
 start_ncat_server() {
+  debug_log "starting ncat server on port $callback_port"
   # Check if the port is already in use
   if lsof -i :$callback_port >/dev/null; then
     error_log "Port $callback_port is already in use. Aborting."
@@ -109,48 +114,40 @@ start_ncat_server() {
     # Print the code to the named pipe
     echo $authcode > acpipe
     # Send a response to the client
-    printf "HTTP/1.1 200 OK\r\n\r\n<h1>Success, authcode retrieved. you may close this window.</h1>"
+    printf "HTTP/1.1 200 OK\r\n\r\n<html><body><h1>Success, authcode retrieved. you may close this window.</h1></body></html>\r\n"
   ' &
 
   # Save the PID of the ncat server so we can kill it later
-  server_pid=$!
+  server_pid=$! # dollar exclamantion mark is the PID of the last command run in the background - neat!
+  debug_log "ncat server pid: '$server_pid'"
 }
 
 open_browser() {
-  # Open the browser to start the OAuth flow. if we are debugging just echo the url
-  # if [ $skip_get_token -eq 1 ]; then
-  #   debug_log "endpoint debuygging , do a curl -L '$callback_endpoint?code=123'"
-  # else
-  # open safari - since we know it's installed on the mac - in a new process and save the PID for killing later
+  # open safari - since we know it's installed - in a new process and save the PID for killing later
   open -n -a "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
   browser_pid=$!
   debug_log "opening browser window to $auth_endpoint"
-  debug_log "browser pid is $browser_pid"
-  # fi
+  debug_log "browser pid: '$browser_pid'"
 }
 
 read_authcode() {
-  # Read the authcode from the named pipe
+  # Wait for the auth code to be written to the named pipe
   read authcode <acpipe
 }
 
 kill_server() {
+  debug_log "killing ncat server with pid $server_pid"
   kill $server_pid
 }
 
 get_access_token() {
-  if [ $skip_get_token -eq 1 ]; then
-    debug_log "skip_get_token - authcode only - result\nauthcode\n$authcode"
-  else
-    debug_log "passing authcode\n$authcode\nto endpoint\n$token_endpoint"
-    # Use the authcode to get the access token
-    response=$(curl -s -X POST "$token_endpoint" \
-      -H "Content-Type: application/x-www-form-urlencoded" \
-      -d "$token_querystring&code=$authcode")
-    access_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
-  fi
-  # Remove the named pipe
-  rm acpipe
+  debug_log "passing authcode\n$authcode\nto endpoint\n$token_endpoint"
+  response=$(curl -s -X POST "$token_endpoint" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "$token_querystring&code=$authcode")
+  access_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+  debug_log "got access token: $access_token"
+  rm acpipe # Remove the named pipe
 }
 
 close_browser() {
@@ -162,7 +159,7 @@ close_browser() {
       debug_log "killing pid $real_pid"
       kill $real_pid
     else
-      debug_log "browser process not found"
+      debug_log "browser process not found, kill it yourself"
     fi
   fi
 }

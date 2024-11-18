@@ -24,6 +24,8 @@ source .env
 # dryrun=0
 # auto_close_browser=1
 # verbose=0
+# default_categories=""
+# ignore_categories=""
 #--------
 
 log() {
@@ -67,9 +69,18 @@ fi
 # Initialize variables
 fromweek=""
 toweek=""
+categories=""
 
-# Get the access token or exit if it's not available
-ACCESS_TOKEN=$(./get_token.zsh)
+# Source default categories from .env
+default_categories="${default_categories:-}"
+
+# Get the auth_token from .env if it exists
+if [ -z "$auth_token" ]; then
+  ACCESS_TOKEN=$(./get_token.zsh)
+else
+  debug_log "auth token already specified in .env"
+  ACCESS_TOKEN=$auth_token
+fi
 if [[ -z "$ACCESS_TOKEN" ]]; then
   error_log "Access token not found. Exiting."
   exit 1
@@ -84,6 +95,10 @@ while [[ "$#" -gt 0 ]]; do
     ;;
   -t | --to)
     toweek="$2"
+    shift
+    ;;
+  -c | --categories)
+    categories="$2"
     shift
     ;;
   *)
@@ -116,6 +131,20 @@ calculate_week_dates() {
   echo "$start_date $end_date"
 }
 
+# Function to check if an event matches any of the specified categories
+matches_categories() {
+  local event_categories=$1
+  local filter_categories=$2
+
+  IFS=',' read -r -A filter_array <<<"$filter_categories"
+  for filter_category in "${filter_array[@]}"; do
+    if echo "$event_categories" | grep -q "$filter_category"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Set default values if not provided
 current_week=$(date +%V)
 previous_week=$((current_week - 1))
@@ -133,7 +162,7 @@ read START_DATE_PREV_WEEK END_DATE_PREV_WEEK <<<$(calculate_week_dates $fromweek
 read START_DATE_CUR_WEEK END_DATE_CUR_WEEK <<<$(calculate_week_dates $toweek)
 
 # Print the calculated dates
-info_log "CLONING EVENTS\nfrom week $fromweek ($START_DATE_PREV_WEEK to $END_DATE_PREV_WEEK)\nto week $toweek ($START_DATE_CUR_WEEK to $END_DATE_CUR_WEEK)"
+info_log "\nCLONING EVENTS\nfrom week $fromweek ($START_DATE_PREV_WEEK to $END_DATE_PREV_WEEK)\nto week $toweek ($START_DATE_CUR_WEEK to $END_DATE_CUR_WEEK)"
 
 # Retrieve events from the "fromweek"
 EVENTS=$(curl -s -X GET "https://graph.microsoft.com/v1.0/me/calendar/calendarView?startDateTime=${START_DATE_PREV_WEEK}&endDateTime=${END_DATE_PREV_WEEK}&select=categories,id,start,end,subject&top=999" -H "Authorization: Bearer $ACCESS_TOKEN" | jq '.value')
@@ -149,7 +178,7 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
   if [[ "$dryrun" -eq 1 ]]; then
     info_log "DRYRUN ONLY: listing events from week $fromweek, not cloning to week $toweek"
   else
-    info_log "Cloning events from week $fromweek to week $toweek"
+    info_log "Cloning events from\nweek $fromweek to\nweek $toweek"
   fi
 
   # Loop through events and create new ones for the "toweek"
@@ -162,14 +191,34 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     START_DATE_TIME=$(_jq '.start.dateTime')
     END_DATE_TIME=$(_jq '.end.dateTime')
     TIME_ZONE=$(_jq '.start.timeZone')
-    NEW_START_DATE_TIME=$(echo $START_DATE_TIME | sed "s/${START_DATE_PREV_WEEK}/${START_DATE_CUR_WEEK}/")
-    NEW_END_DATE_TIME=$(echo $END_DATE_TIME | sed "s/${START_DATE_PREV_WEEK}/${START_DATE_CUR_WEEK}/")
+    days_diff=$(( (toweek - fromweek) * 7 ))
+
+    # Remove fractional seconds from the date-time strings
+    START_DATE_TIME=$(echo $START_DATE_TIME | sed 's/\.[0-9]*//')
+    END_DATE_TIME=$(echo $END_DATE_TIME | sed 's/\.[0-9]*//')
+
+    NEW_START_DATE_TIME=$(date -j -f "%Y-%m-%dT%H:%M:%S" -v+${days_diff}d "${START_DATE_TIME}" "+%Y-%m-%dT%H:%M:%S")
+    NEW_END_DATE_TIME=$(date -j -f "%Y-%m-%dT%H:%M:%S" -v+${days_diff}d "${END_DATE_TIME}" "+%Y-%m-%dT%H:%M:%S")
     CATEGORIES=$(_jq '.categories')
-    # Check if the event has the category "IGNORE"
-    if echo $CATEGORIES | jq -e '.[] | select(. == "IGNORE")' >/dev/null; then
+
+    # Combine default categories with specified categories
+    combined_categories="$default_categories"
+    if [[ -n "$categories" ]]; then
+      combined_categories="$combined_categories,$categories"
+    fi
+
+    # Check if the event matches the combined categories
+    if [[ -n "$combined_categories" ]] && ! matches_categories "$CATEGORIES" "$combined_categories"; then
       debug_log "--"
-      debug_log "IGNORE: $SUBJECT"
+      debug_log "SKIP: $SUBJECT (does not match categories)"
       continue
+    fi
+
+    # Check if the event matches any of the ignore categories
+    if [[ -n "$ignore_categories" ]] && matches_categories "$CATEGORIES" "$ignore_categories"; then
+      debug_log "--"
+      debug_log "IGNORE: $SUBJECT (matches ignore categories)"
+      continue # Skip this event
     fi
 
     # if $dryrun is not 1, echo "dry run" instead of creating events
