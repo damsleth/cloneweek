@@ -133,8 +133,8 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
       continue
     fi
 
-    # if $clone_events is not 1, echo "dry run" instead of creating events
-    if [[ -z "$clone_events" ]]; then
+    # if $dryrun is not 1, echo "dry run" instead of creating events
+    if [[ "$dryrun" -eq 1 ]]; then
       echo "DRYRUN:\n Creating event for $SUBJECT \n Start: $NEW_START_DATE_TIME \n End: $NEW_END_DATE_TIME"
       continue
     fi

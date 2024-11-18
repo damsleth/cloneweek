@@ -71,6 +71,11 @@ main() {
   kill_server
   get_access_token
   close_browser
+  if [ -n "$access_token" ]; then
+    echo $access_token
+    exit 0
+  fi
+  exit 1
 }
 
 check_command_dependency() {
@@ -127,20 +132,6 @@ open_browser() {
   # fi
 }
 
-close_browser() {
-  if [ $auto_close_browser -eq 1 ]; then
-    debug_log "closing auth code browser window"
-    if [ -n "$browser_pid" ]; then
-      debug_log "found browser process with id $browser_pid"
-      ((real_pid = browser_pid + 1))
-      debug_log "killing pid $real_pid"
-      kill $real_pid
-    else
-      debug_log "browser process not found"
-    fi
-  fi
-}
-
 read_authcode() {
   # Read the authcode from the named pipe
   read authcode <acpipe
@@ -160,13 +151,23 @@ get_access_token() {
       -H "Content-Type: application/x-www-form-urlencoded" \
       -d "$token_querystring&code=$authcode")
     access_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
-    debug_log "access token\n$access_token"
-    echo "$access_token"
   fi
   # Remove the named pipe
   rm acpipe
-  # And we're done
-  exit 0
+}
+
+close_browser() {
+  if [ $auto_close_browser -eq 1 ]; then
+    debug_log "closing auth code browser window"
+    if [ -n "$browser_pid" ]; then
+      debug_log "found browser process with id $browser_pid"
+      ((real_pid = browser_pid + 1))
+      debug_log "killing pid $real_pid"
+      kill $real_pid
+    else
+      debug_log "browser process not found"
+    fi
+  fi
 }
 
 main
