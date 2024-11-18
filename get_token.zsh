@@ -70,12 +70,9 @@ main() {
   read_authcode
   kill_server
   get_access_token
+  echo $access_token
   close_browser
-  if [ -n "$access_token" ]; then
-    echo $access_token
-    exit 0
-  fi
-  exit 1
+  exit 0
 }
 
 check_command_dependency() {
@@ -121,7 +118,7 @@ start_ncat_server() {
 
 open_browser() {
   # Open the browser to start the OAuth flow. if we are debugging just echo the url
-  # if [ $dryrun -eq 1 ]; then
+  # if [ $skip_get_token -eq 1 ]; then
   #   debug_log "endpoint debuygging , do a curl -L '$callback_endpoint?code=123'"
   # else
   # open safari - since we know it's installed on the mac - in a new process and save the PID for killing later
@@ -142,8 +139,8 @@ kill_server() {
 }
 
 get_access_token() {
-  if [ $dryrun -eq 1 ]; then
-    debug_log "dryrun result\nauthcode\n$authcode"
+  if [ $skip_get_token -eq 1 ]; then
+    debug_log "skip_get_token - authcode only - result\nauthcode\n$authcode"
   else
     debug_log "passing authcode\n$authcode\nto endpoint\n$token_endpoint"
     # Use the authcode to get the access token

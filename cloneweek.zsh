@@ -26,30 +26,43 @@ source .env
 # verbose=0
 #--------
 
+log() {
+  local level=$1
+  local message=$2
+  local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+  if [[ "$log_timestamp" -eq 1 ]]; then
+    echo "$timestamp [$level] $message" >&2
+  else
+    echo "$message" >&2
+  fi
+}
+
 debug_log() {
   if [ $debug -eq 1 ]; then
-    print -P "%F{green}DEBUG: $1" >&2
+    log "DEBUG" "$1"
   fi
 }
 
 error_log() {
-  print -P "%F{red}ERROR: $1" >&2
+  log "ERROR" "$1"
+}
+
+info_log() {
+  log "INFO" "$1"
 }
 
 if [[ "$debug" -eq 1 ]]; then
-  echo "debug logging enabled"
+  debug_log "Debug logging enabled"
 fi
 
 if [[ "$verbose" -eq 1 ]]; then
   set -x
-  echo "shell debug mode (verbose logging) enabled"
+  debug_log "Shell debug mode (verbose logging) enabled"
 fi
 
 if [[ "$dryrun" -eq 1 ]]; then
-  echo "DRYRUN ONLY - fetching token, but not cloning files"
+  info_log "DRYRUN ONLY - fetching token, but not cloning files"
 fi
-
-
 
 # Initialize variables
 fromweek=""
@@ -74,7 +87,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
     ;;
   *)
-    echo "Unknown parameter: $1"
+    error_log "Unknown parameter: $1"
     exit 1
     ;;
   esac
@@ -88,9 +101,17 @@ calculate_week_dates() {
   # Calculate the date of the first day (Monday) of the given ISO week number
   # This uses the 'date' command with ISO week date format
   start_date=$(date -j -f "%Y %V %u" "$(date +%G) ${week_num} 1" "+%Y-%m-%dT00:00:00")
+  if [[ $? -ne 0 ]]; then
+    error_log "Failed to calculate start date for week $week_num"
+    exit 1
+  fi
 
   # Calculate the end date (Sunday of the same week) by adding 6 days to the start date
   end_date=$(date -j -f "%Y-%m-%dT%H:%M:%S" -v+6d "${start_date}" "+%Y-%m-%dT23:59:59")
+  if [[ $? -ne 0 ]]; then
+    error_log "Failed to calculate end date for week $week_num"
+    exit 1
+  fi
 
   echo "$start_date $end_date"
 }
@@ -111,31 +132,55 @@ fi
 read START_DATE_PREV_WEEK END_DATE_PREV_WEEK <<<$(calculate_week_dates $fromweek)
 read START_DATE_CUR_WEEK END_DATE_CUR_WEEK <<<$(calculate_week_dates $toweek)
 
+# Print the calculated dates
+info_log "CLONING EVENTS\nfrom week $fromweek ($START_DATE_PREV_WEEK to $END_DATE_PREV_WEEK)\nto week $toweek ($START_DATE_CUR_WEEK to $END_DATE_CUR_WEEK)"
+
 # Retrieve events from the "fromweek"
-EVENTS=$(curl -s -X GET "https://graph.microsoft.com/v1.0/me/calendar/calendarView?startDateTime=${START_DATE_PREV_WEEK}&endDateTime=${END_DATE_PREV_WEEK}&select=categories,id,start,end,subject" -H "Authorization: Bearer $ACCESS_TOKEN" | jq '.value')
+EVENTS=$(curl -s -X GET "https://graph.microsoft.com/v1.0/me/calendar/calendarView?startDateTime=${START_DATE_PREV_WEEK}&endDateTime=${END_DATE_PREV_WEEK}&select=categories,id,start,end,subject&top=999" -H "Authorization: Bearer $ACCESS_TOKEN" | jq '.value')
+if [[ $? -ne 0 ]]; then
+  error_log "Failed to retrieve events from Microsoft Graph API"
+  exit 1
+fi
 
 # Check if EVENTS is not null and is an array with elements
 if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else false end') == "true" ]]; then
-  echo "Cloning events from week $fromweek to week $toweek"
-  # Loop through events and create new ones for the "toweek"
+  NUM_EVENTS=$(echo "${EVENTS}" | jq 'length')
+  info_log "Found $NUM_EVENTS events to process."
+  if [[ "$dryrun" -eq 1 ]]; then
+    info_log "DRYRUN ONLY: listing events from week $fromweek, not cloning to week $toweek"
+  else
+    info_log "Cloning events from week $fromweek to week $toweek"
+  fi
 
+  # Loop through events and create new ones for the "toweek"
   for row in $(echo "${EVENTS}" | jq -r '.[] | @base64'); do
     _jq() {
       echo ${row} | base64 --decode | jq -r ${1}
     }
     SUBJECT=$(_jq '.subject')
     BODY="CLONED"
+    START_DATE_TIME=$(_jq '.start.dateTime')
+    END_DATE_TIME=$(_jq '.end.dateTime')
     TIME_ZONE=$(_jq '.start.timeZone')
+    NEW_START_DATE_TIME=$(echo $START_DATE_TIME | sed "s/${START_DATE_PREV_WEEK}/${START_DATE_CUR_WEEK}/")
+    NEW_END_DATE_TIME=$(echo $END_DATE_TIME | sed "s/${START_DATE_PREV_WEEK}/${START_DATE_CUR_WEEK}/")
     CATEGORIES=$(_jq '.categories')
     # Check if the event has the category "IGNORE"
     if echo $CATEGORIES | jq -e '.[] | select(. == "IGNORE")' >/dev/null; then
-      echo "Skipping event with category IGNORE: $SUBJECT"
+      debug_log "--"
+      debug_log "IGNORE: $SUBJECT"
       continue
     fi
 
     # if $dryrun is not 1, echo "dry run" instead of creating events
     if [[ "$dryrun" -eq 1 ]]; then
-      echo "DRYRUN:\n Creating event for $SUBJECT \n Start: $NEW_START_DATE_TIME \n End: $NEW_END_DATE_TIME"
+      debug_log "--"
+      debug_log "$SUBJECT"
+      debug_log "Start: $START_DATE_TIME"
+      debug_log "End: $END_DATE_TIME"
+      debug_log "New start date: $NEW_START_DATE_TIME"
+      debug_log "New end date: $NEW_END_DATE_TIME"
+      debug_log "Categories: $CATEGORIES"
       continue
     fi
     # Create new event for the "toweek"
@@ -158,7 +203,10 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
       },
       \"categories\": $CATEGORIES
     }"
+    if [[ $? -ne 0 ]]; then
+      error_log "Failed to create event for $SUBJECT"
+    fi
   done
 else
-  echo "No events to process."
+  info_log "No events to process."
 fi
