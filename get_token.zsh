@@ -123,8 +123,12 @@ start_ncat_server() {
 }
 
 open_browser() {
-  # open safari - since we know it's installed - in a new process and save the PID for killing later
-  open -n -a "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
+  # open safari - since we know it's installed - 
+  # (-n) in a new process and save the PID for killing later
+  # (-a) specify the app to open with
+  # (-g) don't bring the app to the foreground
+  # (-j) open the app hidden
+  open -ngja "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
   browser_pid=$!
   debug_log "opening browser window to $auth_endpoint"
   debug_log "browser pid: '$browser_pid'"
@@ -158,6 +162,7 @@ close_browser() {
       ((real_pid = browser_pid + 1))
       debug_log "killing pid $real_pid"
       kill $real_pid
+      kill $real_pid + 1 # kill the child process too if it exists
     else
       debug_log "browser process not found, kill it yourself"
     fi
