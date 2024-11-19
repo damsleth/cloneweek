@@ -33,6 +33,14 @@ source .env
 # ignore_categories="IGNORE"
 #--------
 
+# Initialize variables
+fromweek=""
+toweek=""
+categories=""
+CLONED_EVENTS=0  # Initialize counter for events to clone - i.e. filtered events
+IGNORED_EVENTS=0 # Initialize counter for events to ignore - i.e. filtered events
+SKIPPED_EVENTS=0 # Initialize counter for events to skip - i.e. filtered events
+
 log() {
   local level=$1
   local message=$2
@@ -42,6 +50,41 @@ log() {
     echo "$message" >&2
   fi
 }
+
+# Parse command-line arguments
+while [[ "$#" -gt 0 ]]; do
+  case $1 in
+  -f | --from)
+    fromweek="$2"
+    shift
+    ;;
+  -t | --to)
+    toweek="$2"
+    shift
+    ;;
+  -c | --categories)
+    categories="$2"
+    shift
+    ;;
+  -d | --dryrun)
+    dryrun=1
+    shift
+    ;;
+  -l | --debug | --log)
+    debug=1
+    shift
+    ;;
+  -v | --verbose)
+    verbose=1
+    shift
+    ;;
+  *)
+    log "ERROR" "Unknown parameter: $1"
+    exit 1
+    ;;
+  esac
+  shift
+done
 
 debug_log() {
   if [ $debug -eq 1 ]; then
@@ -70,11 +113,6 @@ if [[ "$dryrun" -eq 1 ]]; then
   info_log "Dryrun only, no events will be created"
 fi
 
-# Initialize variables
-fromweek=""
-toweek=""
-categories=""
-
 # Source default categories from .env
 default_categories="${default_categories:-}"
 
@@ -90,29 +128,6 @@ if [[ -z "$ACCESS_TOKEN" ]]; then
   error_log "Access token not found. Exiting."
   exit 1
 fi
-
-# Parse command-line arguments
-while [[ "$#" -gt 0 ]]; do
-  case $1 in
-  -f | --from)
-    fromweek="$2"
-    shift
-    ;;
-  -t | --to)
-    toweek="$2"
-    shift
-    ;;
-  -c | --categories)
-    categories="$2"
-    shift
-    ;;
-  *)
-    error_log "Unknown parameter: $1"
-    exit 1
-    ;;
-  esac
-  shift
-done
 
 # Function to calculate start and end dates of a given ISO week number
 calculate_week_dates() {
@@ -147,6 +162,54 @@ matches_categories() {
       return 0
     fi
   done
+  return 1
+}
+
+# Function to combine default categories with specified categories
+combine_categories() {
+  local default_categories=$1
+  local categories=$2
+  local combined_categories=""
+
+  if [[ -n "$default_categories" ]]; then
+    combined_categories="$default_categories"
+  fi
+  if [[ -n "$categories" ]]; then
+    if [[ -n "$combined_categories" ]]; then
+      combined_categories="$combined_categories,$categories"
+    else
+      combined_categories="$categories"
+    fi
+  fi
+
+  echo "$combined_categories"
+}
+
+# Function to check if an event should be skipped based on categories
+should_skip_event() {
+  local event_categories=$1
+  local combined_categories=$2
+  local ignore_categories=$3
+
+  # Check if the event matches the combined categories
+  if [[ -n "$combined_categories" ]] && ! matches_categories "$event_categories" "$combined_categories"; then
+    SKIPPED_EVENTS=$((SKIPPED_EVENTS + 1))
+    if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
+      info_log "--"
+      info_log "SKIP: '$SUBJECT' (no category match)"
+    fi
+    return 0
+  fi
+
+  # Check if the event matches any of the ignore categories
+  if [[ -n "$ignore_categories" ]] && matches_categories "$event_categories" "$ignore_categories"; then
+    IGNORED_EVENTS=$((IGNORED_EVENTS + 1))
+    if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
+      info_log "--"
+      info_log "IGNORE: '$SUBJECT' (ignore category match)"
+    fi
+    return 0
+  fi
   return 1
 }
 
@@ -186,13 +249,13 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     info_log "Cloning events from\nweek $fromweek toweek $toweek"
   fi
 
-  # Loop through events and create new ones for the "toweek"
-  for row in $(echo "${EVENTS}" | jq -r '.[] | @base64'); do
+  clone_event() {
+    local row=$1
     _jq() {
       echo ${row} | base64 --decode | jq -r ${1}
     }
     SUBJECT=$(_jq '.subject')
-    BODY="CLONED"
+    BODY="This event was cloned from week $fromweek."
     START_DATE_TIME=$(_jq '.start.dateTime')
     END_DATE_TIME=$(_jq '.end.dateTime')
     TIME_ZONE=$(_jq '.start.timeZone')
@@ -207,35 +270,13 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     CATEGORIES=$(_jq '.categories')
 
     # Combine default categories with specified categories
-    combined_categories=""
-    if [[ -n "$default_categories" ]]; then
-      combined_categories="$default_categories"
-    fi
-    if [[ -n "$categories" ]]; then
-      if [[ -n "$combined_categories" ]]; then
-        combined_categories="$combined_categories,$categories"
-      else
-        combined_categories="$categories"
-      fi
-    fi
+    combined_categories=$(combine_categories "$default_categories" "$categories")
 
-    # Check if the event matches the combined categories
-    if [[ -n "$combined_categories" ]] && ! matches_categories "$CATEGORIES" "$combined_categories"; then
-      if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-        info_log "--"
-        info_log "SKIP: '$SUBJECT' (no category match)"
-      fi
-      continue
+    # Check if the event should be skipped based on categories
+    if should_skip_event "$CATEGORIES" "$combined_categories" "$ignore_categories"; then
+      return
     fi
-
-    # Check if the event matches any of the ignore categories
-    if [[ -n "$ignore_categories" ]] && matches_categories "$CATEGORIES" "$ignore_categories"; then
-      if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-        info_log "--"
-        info_log "IGNORE: '$SUBJECT' (ignore category match)"
-      fi
-      continue # Skip this event
-    fi
+    CLONED_EVENTS=$((CLONED_EVENTS + 1))
 
     if [[ "$log_events" -eq 1 ]]; then
       info_log ""
@@ -248,7 +289,7 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     fi
 
     if [[ "$dryrun" -eq 1 ]]; then
-      continue # Skip creating events in dry-run mode
+      return # Skip creating events in dry-run mode
     fi
     # Create new event for the "toweek"
     curl -s -X POST https://graph.microsoft.com/v1.0/me/events \
@@ -273,7 +314,14 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     if [[ $? -ne 0 ]]; then
       error_log "Failed to create event for $SUBJECT"
     fi
+  }
+
+  # Loop through events and create new ones for the "toweek"
+  for row in $(echo "${EVENTS}" | jq -r '.[] | @base64'); do
+    clone_event "$row"
   done
 else
   info_log "No events to process."
 fi
+info_log "\n------------------\nEvents from week $fromweek to week $toweek"
+info_log "$CLONED_EVENTS\tcloned\n$IGNORED_EVENTS\tignored\n$SKIPPED_EVENTS\tskipped\n$NUM_EVENTS\ttotal"
