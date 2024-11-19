@@ -162,7 +162,6 @@ close_browser() {
       ((real_pid = browser_pid + 1))
       debug_log "killing pid $real_pid"
       kill $real_pid
-      kill $real_pid + 1 # kill the child process too if it exists
     else
       debug_log "browser process not found, kill it yourself"
     fi
