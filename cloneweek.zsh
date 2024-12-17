@@ -36,19 +36,19 @@ log() {
 # Parse command-line arguments
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-  -f | --from)
+  -f | --from | --from-week)
     fromweek="$2"
     shift
     ;;
-  -t | --to)
+  -t | --to | --to-week)
     toweek="$2"
     shift
     ;;
-  -c | --categories)
+  -c | --categories | --category)
     categories="$2"
     shift
     ;;
-  -d | --dryrun)
+  -d | --dryrun | --dry-run | --test)
     dryrun=1
     ;;
   -l | --debug | --log)
@@ -174,8 +174,8 @@ should_skip_event() {
   if [[ -n "$combined_categories" ]] && ! matches_categories "$event_categories" "$combined_categories"; then
     SKIPPED_EVENTS=$((SKIPPED_EVENTS + 1))
     if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-      info_log "--"
-      info_log "SKIP: '$SUBJECT' (no category match)"
+      # info_log "--"
+      info_log "SKIP: '$SUBJECT' (NO_MATCH)"
     fi
     return 0
   fi
@@ -184,8 +184,8 @@ should_skip_event() {
   if [[ -n "$ignore_categories" ]] && matches_categories "$event_categories" "$ignore_categories"; then
     IGNORED_EVENTS=$((IGNORED_EVENTS + 1))
     if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-      info_log "--"
-      info_log "IGNORE: '$SUBJECT' (ignore category match)"
+      # info_log "--"
+      info_log "IGNORE: '$SUBJECT' (IGNORE_MATCH)"
     fi
     return 0
   fi
@@ -260,11 +260,14 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     if [[ "$log_events" -eq 1 ]]; then
       info_log ""
       info_log "Subject\t\t$SUBJECT"
-      info_log "Start\t\t$START_DATE_TIME"
-      info_log "End\t\t$END_DATE_TIME"
-      info_log "New start\t$NEW_START_DATE_TIME"
-      info_log "New end \t$NEW_END_DATE_TIME"
+      # info_log "Start\t\t$START_DATE_TIME"
+      # info_log "End\t\t$END_DATE_TIME"
+      # info_log "New start\t$NEW_START_DATE_TIME"
+      # info_log "New end \t$NEW_END_DATE_TIME"
+      info_log "Start/End\t$START_DATE_TIME - $END_DATE_TIME"
+      info_log "New Start/End\t$NEW_START_DATE_TIME - $NEW_END_DATE_TIME"
       info_log "Categories\t$(echo $CATEGORIES | tr -d '\n')"
+      info_log""
     fi
 
     if [[ "$dryrun" -eq 1 ]]; then

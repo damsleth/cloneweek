@@ -145,12 +145,12 @@ kill_server() {
 }
 
 get_access_token() {
-    debug_log "passing authcode\n$authcode\nto endpoint\n$token_endpoint"
+    debug_log "passing authcode *REDACTED* to endpoint\n$token_endpoint"
     response=$(curl -s -X POST "$token_endpoint" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "$token_querystring&code=$authcode")
     access_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
-    debug_log "got access token: $access_token"
+    debug_log "got access token: *REDACTED*"
     rm acpipe # Remove the named pipe
 }
 
@@ -159,7 +159,7 @@ close_browser() {
         debug_log "closing auth code browser window"
         # The whole PID thing is super unreliable because the .app spawns sub-processes
         # we'll just kill the last opened safari process using pkill
-        pkill -fn "Safari"
+        pgrep -nx "Safari" | xargs kill
     fi
 }
 
