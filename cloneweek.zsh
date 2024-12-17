@@ -36,6 +36,22 @@ log() {
 # Parse command-line arguments
 while [[ "$#" -gt 0 ]]; do
   case $1 in
+  -h | --help)
+    echo "Usage: cloneweek.zsh [options]"
+    echo "Options:"
+    echo "  -f, --from, --from-week           Specify the week number to clone events from"
+    echo "  -t, --to, --to-week               Specify the week number to clone events to"
+    echo "  -c, --categories <categories>     Comma separated list of categories to clone"
+    echo "  -d, --dry-run, --test             Perform a dry run without creating events"
+    echo "  -l, --debug, --log                Enable debug logging"
+    echo "  -v, --verbose                     Enable verbose logging"
+    echo "  -h, --help                        Display this help message"
+    exit 0
+    ;;
+  -i | --ignore | --ignore-categories)
+    ignore_categories="$2"
+    shift
+    ;;
   -f | --from | --from-week)
     fromweek="$2"
     shift
@@ -44,7 +60,7 @@ while [[ "$#" -gt 0 ]]; do
     toweek="$2"
     shift
     ;;
-  -c | --categories | --category)
+  -c | --categories)
     categories="$2"
     shift
     ;;
@@ -174,8 +190,8 @@ should_skip_event() {
   if [[ -n "$combined_categories" ]] && ! matches_categories "$event_categories" "$combined_categories"; then
     SKIPPED_EVENTS=$((SKIPPED_EVENTS + 1))
     if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-      # info_log "--"
-      info_log "SKIP: '$SUBJECT' (NO_MATCH)"
+      # info_log "SKIPPED (no_match):\t '$SUBJECT'"
+      info_log "SKIP (no_match)\t$SUBJECT"
     fi
     return 0
   fi
@@ -184,8 +200,7 @@ should_skip_event() {
   if [[ -n "$ignore_categories" ]] && matches_categories "$event_categories" "$ignore_categories"; then
     IGNORED_EVENTS=$((IGNORED_EVENTS + 1))
     if [[ "$log_ignored_events" -eq 1 ]] && [[ "$log_events" -eq 1 ]]; then
-      # info_log "--"
-      info_log "IGNORE: '$SUBJECT' (IGNORE_MATCH)"
+      info_log "IGNORE\t'$SUBJECT'"
     fi
     return 0
   fi
@@ -234,7 +249,7 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
       echo ${row} | base64 --decode | jq -r ${1}
     }
     SUBJECT=$(_jq '.subject')
-    BODY="This event was cloned from week $fromweek."
+    BODY="Cloned from week $fromweek using cloneweek.zsh"
     START_DATE_TIME=$(_jq '.start.dateTime')
     END_DATE_TIME=$(_jq '.end.dateTime')
     TIME_ZONE=$(_jq '.start.timeZone')
@@ -259,14 +274,11 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
 
     if [[ "$log_events" -eq 1 ]]; then
       info_log ""
-      info_log "Subject\t\t$SUBJECT"
-      # info_log "Start\t\t$START_DATE_TIME"
-      # info_log "End\t\t$END_DATE_TIME"
-      # info_log "New start\t$NEW_START_DATE_TIME"
-      # info_log "New end \t$NEW_END_DATE_TIME"
-      info_log "Start/End\t$START_DATE_TIME - $END_DATE_TIME"
-      info_log "New Start/End\t$NEW_START_DATE_TIME - $NEW_END_DATE_TIME"
-      info_log "Categories\t$(echo $CATEGORIES | tr -d '\n')"
+      info_log "SUBJECT\t\t$SUBJECT"
+      info_log "Start/End\t${START_DATE_TIME%:00} - ${END_DATE_TIME%:00}"
+      info_log "New Start/End\t${NEW_START_DATE_TIME%:00} - ${NEW_END_DATE_TIME%:00}"
+      # info_log "Categories\t$(echo $CATEGORIES | tr -d '\n')"
+      info_log "Categories\t$(echo $CATEGORIES | tr -d '[]' | tr -d '\n' | xargs)"
       info_log""
     fi
 
@@ -307,3 +319,9 @@ else
 fi
 info_log "\n------------------\nEvents from week $fromweek to week $toweek"
 info_log "$CLONED_EVENTS\tcloned\n$IGNORED_EVENTS\tignored\n$SKIPPED_EVENTS\tskipped\n$NUM_EVENTS\ttotal"
+
+if [[ "$dryrun" -eq 1 ]]; then
+  info_log "Dryrun only, no events were created.\nDisable dryrun to create events"
+fi
+
+exit 0
