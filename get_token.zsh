@@ -68,14 +68,14 @@ main() {
     open_browser
     read_authcode
     kill_server
-    get_access_token
+    get_graph_token
     close_browser
     finish
 }
 
 finish() {
     debug_log "DONE"
-    echo $access_token
+    echo $graph_token
     exit 0
 }
 
@@ -124,14 +124,12 @@ start_ncat_server() {
 
 open_browser() {
     # open safari - since we know it's installed -
-    # (-n) in a new process and save the PID for killing later
-    # (-a) specify the app to open with
+    # (-n) in a new process
+    # (-a) specify the app-name
     # (-g) don't bring the app to the foreground
     # (-j) open the app hidden
     open -ngja "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
-    browser_pid=$!
     debug_log "opening browser window to $auth_endpoint"
-    debug_log "browser pid: '$browser_pid'"
 }
 
 read_authcode() {
@@ -144,14 +142,22 @@ kill_server() {
     kill $server_pid
 }
 
-get_access_token() {
+get_graph_token() {
     debug_log "passing authcode *REDACTED* to endpoint\n$token_endpoint"
     response=$(curl -s -X POST "$token_endpoint" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         -d "$token_querystring&code=$authcode")
-    access_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+    
+    debug_log "endpoint response:\n $response"
+    
+    graph_token=$(echo $response | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+    if [ -z "$graph_token" ]; then
+        error_log "Failed to get access token. Aborting."
+        exit 1
+    fi
     debug_log "got access token: *REDACTED*"
     rm acpipe # Remove the named pipe
+
 }
 
 close_browser() {

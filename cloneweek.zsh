@@ -113,14 +113,14 @@ default_categories="${default_categories:-}"
 
 # Get the auth_token from .env if it exists
 if [ -z "$auth_token" ]; then
-  debug_log "Getting access token from get_token.zsh"
-  ACCESS_TOKEN=$(./get_token.zsh)
+  debug_log "Getting auth token from get_token.zsh"
+  TOKEN=$(./get_token.zsh)
 else
-  debug_log "Access token found in .env"
-  ACCESS_TOKEN=$auth_token
+  debug_log "Auth token found in .env"
+  TOKEN=$auth_token
 fi
-if [[ -z "$ACCESS_TOKEN" ]]; then
-  error_log "Access token not found. Exiting."
+if [[ -z "$TOKEN" ]]; then
+  error_log "Auth token not found. Exiting."
   exit 1
 fi
 
@@ -227,7 +227,7 @@ read START_DATE_CUR_WEEK END_DATE_CUR_WEEK <<<$(calculate_week_dates $toweek)
 info_log "CLONING EVENTS\nfrom week $fromweek ($START_DATE_PREV_WEEK to $END_DATE_PREV_WEEK)\nto week $toweek ($START_DATE_CUR_WEEK to $END_DATE_CUR_WEEK)"
 
 # Retrieve events from the "fromweek"
-EVENTS=$(curl -s -X GET "https://graph.microsoft.com/v1.0/me/calendar/calendarView?startDateTime=${START_DATE_PREV_WEEK}&endDateTime=${END_DATE_PREV_WEEK}&select=categories,id,start,end,subject&top=999" -H "Authorization: Bearer $ACCESS_TOKEN" | jq '.value')
+EVENTS=$(curl -s -X GET "https://graph.microsoft.com/v1.0/me/calendar/calendarView?startDateTime=${START_DATE_PREV_WEEK}&endDateTime=${END_DATE_PREV_WEEK}&select=categories,id,start,end,subject&top=999" -H "Authorization: Bearer $TOKEN" | jq '.value')
 if [[ $? -ne 0 ]]; then
   error_log "Failed to retrieve events from Microsoft Graph API"
   exit 1
@@ -287,7 +287,7 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
     fi
     # Create new event for the "toweek"
     curl -s -X POST https://graph.microsoft.com/v1.0/me/events \
-      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       -d "{
       \"subject\": \"$SUBJECT\",

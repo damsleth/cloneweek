@@ -27,12 +27,14 @@ This script automates that process, so I can spend more time on fun stuff, like 
   - Clones all events in the `default_categories` setting in `.env`, as well as those you specify with the `--categories` flag.
   - Creates new events for the current week with the same categories as the original event (`body` is stripped out to save bandwidth).  
 
-- **Access Token**:
-  - The `get_token.zsh` script fetches your access token by default if you have the client ID and secret set in the `.env` file. However, you can specify the access token yourself by replacing `YOUR_ACCESS_TOKEN` in the script, or implement token caching.
+- **Microsoft Graph JWT Token**:
+  - The `get_token.zsh` script fetches your access token by default if you have the client ID and secret set in the `.env` file. You can also specify the token yourself with the `--token` flag, or add it to the `.env`-file.
 
 ## Environment Variables
 
-Environment variables which should be set in the `.env` file:
+Environment variables which can be set in the `.env` file:
+
+### Required
 
 - `client_id`: Azure AD application client ID.
 - `client_secret`: Azure AD application client secret.
@@ -44,16 +46,20 @@ Environment variables which should be set in the `.env` file:
 - `callback_host`: Callback host URL.
 - `callback_port`: Callback port number.
 - `callback_path`: Callback path.
+
+### Optional
+
 - `ignore_categories`: Categories to ignore when cloning events.
 - `default_categories`: Default categories to clone if not specified.
 - `auto_close_browser`: Automatically close the browser after authentication (1 to enable, 0 to disable).
-- `auth_token`: Authentication token to use, if not provided, the app will open a browser to authenticate.
 - `dryrun`: Perform a dry run without creating events (1 to enable, 0 to disable).
 - `debug`: Enable debug logging (1 to enable, 0 to disable).
 - `verbose`: Enable verbose logging (1 to enable, 0 to disable).
 - `log_events`: Log calendar events to stdout (1 to enable, 0 to disable).
 - `log_ignored_events`: Log ignored and unmatched events to stdout (1 to enable, 0 to disable).
 - `prefix_log`: Prefix log messages with ["INFO", "DEBUG", "ERROR"] (1 to enable, 0 to disable).
+- `graph_token`: Authentication token to use, if not provided, the app will open a browser to authenticate.
+- `graph_token_exp`: expiration datetime for the graph token, if it's cached.
 
 This script should work effectively on macOS to clone your Outlook calendar events from the previous week to the current week, excluding events based on the custom ignore category and filters. Adjust the script as needed based on your specific requirements.
 
