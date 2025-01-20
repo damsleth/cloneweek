@@ -102,17 +102,21 @@ start_ncat_server() {
 
     # Start a just-in-time ncat server to capture the auth code
     debug_log "starting ncat listener on port $callback_port to capture auth code"
-
     ncat -lk -p $callback_port -c '
+
     # Read the first line of the request
     read request
+    
     # Extract the query string from the request
     query_string=${request#*code=}
     query_string=${query_string%% *}
+    
     # Extract the code from the query string
     authcode=${query_string%%&*}
+
     # Print the code to the named pipe
     echo $authcode > acpipe
+    
     # Send a response to the client
     printf "HTTP/1.1 200 OK\r\n\r\n<html><body><h1>Success, authcode retrieved. you may close this window.</h1></body></html>\r\n"
   ' &
@@ -128,7 +132,7 @@ open_browser() {
     # (-a) specify the app-name
     # (-g) don't bring the app to the foreground
     # (-j) open the app hidden
-    open -ngja "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
+    open -na "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
     debug_log "opening browser window to $auth_endpoint"
 }
 
