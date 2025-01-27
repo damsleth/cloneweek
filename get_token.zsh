@@ -132,6 +132,7 @@ open_browser() {
     # (-a) specify the app-name
     # (-g) don't bring the app to the foreground
     # (-j) open the app hidden
+    # opening the app hidden and/or in the background is hard to debug if something goes wrong
     open -na "Safari" "$auth_endpoint?client_id=$client_id&response_type=code&redirect_uri=$callback_endpoint&response_mode=query&scope=$scope" &
     debug_log "opening browser window to $auth_endpoint"
 }

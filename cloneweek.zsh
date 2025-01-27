@@ -208,7 +208,7 @@ should_skip_event() {
 }
 
 # Set default values if not provided
-current_week=$(date +%V)
+current_week=$(date +%-V)
 previous_week=$((current_week - 1))
 
 if [[ -z "$fromweek" ]]; then
@@ -313,6 +313,7 @@ if [[ $(echo "${EVENTS}" | jq -e '. | if type=="array" then (length > 0) else fa
   # Loop through events and create new ones for the "toweek"
   for row in $(echo "${EVENTS}" | jq -r '.[] | @base64'); do
     clone_event "$row"
+    info_log ""
   done
 else
   info_log "No events to process."
