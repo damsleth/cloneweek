@@ -91,8 +91,12 @@ check_command_dependency() {
 start_ncat_server() {
     debug_log "starting ncat server on port $callback_port"
     # Check if the port is already in use
-    if lsof -i :$callback_port >/dev/null; then
+    if lsof -i4 :$callback_port >/dev/null; then
         error_log "Port $callback_port is already in use. Aborting."
+        error_log "Probably another instance of this script is running or a previous instance didn't close properly."
+        error_log "You can do 'lsof -i4 :$callback_port' and then 'kill <PID>' to free up the port,"
+        error_log "or you can change the port in the .env file."
+        error_log "Aborting"
         exit 1
     fi
 
